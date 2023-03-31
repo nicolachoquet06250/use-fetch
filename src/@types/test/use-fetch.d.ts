@@ -7,7 +7,7 @@ declare module 'tests/use-fetch' {
         FromSchemaToType,
         From$RefToType,
         APIContentType,
-        Requests, Responses, APIHeaders, APIResponses, APIHttpCode, APIServers
+        Requests, Responses, APIHeaders, APIResponses, APIHttpCode, APIServers, APIBody
     } from 'use-fetch';
 
     type TestAPIServers = APIServers;
@@ -84,6 +84,13 @@ declare module 'tests/use-fetch' {
     type TestAccept = APIContentType<Responses<'/api/collaborateurs/{id}', 'get'>>;
     
     type TestAPIHeaders = APIHeaders<'/api/collaborateurs/{id}', 'get'>
+    type TestAPIHeaders2 = APIHeaders<'/api/authentication-token', 'post'>;
 
     type TestAPIHttpCode = APIHttpCode<'/api/agents', 'get'>;
+
+    type TestAPIPathParameters = APIPathParameters<'/api/authentication-token', 'post'>;
+    type TestAPIRequest = APIRequest<'/api/authentication-token', 'post', 'application/json'>;
+
+    type TestAPIBody = APIBody<'/api/authentication-token', 'post', 'application/json'>;
+    type TestBody = TestAPIPathParameters & TestAPIRequest
 }

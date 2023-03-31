@@ -132,6 +132,17 @@ declare module 'use-fetch' {
         Final = OptionalParameters & NonOptionalParameters
     > = { [K in keyof Final]: Final[K] };
 
+    type APIBody<
+        U extends APIPath, 
+        M extends APIMethod<U>,
+        ContentType extends APIContentType<U, M>,
+        PathParams = APIPathParameters<U, M>,
+        Request = APIRequest<U, M, ContentType>,
+        Body = PathParams & Request
+    > = {
+        [K in keyof Body]: Body[K]
+    }
+
     type APIResponse<
         P extends APIPath, 
         M extends APIMethod<P>,
