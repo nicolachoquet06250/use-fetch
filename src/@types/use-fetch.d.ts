@@ -1,304 +1,250 @@
 declare module 'use-fetch' {
-    import { Omited, Optionals, Combine } from 'utils';
-
-    type Email = `${string}@${string}.${string}`;
-
-    // model d'un schema open-api
     type Schema = {
-        type: 
-            | 'string' | 'boolean' 
-            | 'number' | 'object',
-        properties?: {
-            [ k: string ]: {
-                type?: 
-                    | 'string' | 'boolean' 
-                    | 'integer' | 'number',
-                format?: 
-                    | 'int32' | 'int64' 
-                    | 'float' | 'double' 
-                    | 'password' | 'email',
-                $ref?: `#/components/schema/${string}`,
-                required?: boolean
+        type: 'string' | 'boolean' | 'number' | 'integer' | 'double'
+    } | {
+        type: 'object',
+        properties: Record<string, Record<string, any>>,
+        required?: string[],
+        additionalProperties: boolean
+    };
+
+    type StringToTypeT = {
+        type: 'string' | 'boolean' | 'number' | 'integer' | 'double',
+    } | { 
+        type: 'array',
+        items: {
+            type: 'string' | 'boolean' | 'number' | 'integer' | 'double'
+        }
+    } | {
+        $ref: `#/components/schemas/${string}`
+    } | { 
+        type: 'array',
+        items: {
+            $ref: `#/components/schemas/${string}`
+        }
+    } | 'string' | 'boolean' | 'number' | 'integer' | 'double';
+
+    type Responses<
+        U extends APIPath,
+        M extends APIMethod<U>,
+        Tmp = {
+            [K in keyof OpenAPI['paths'][U][M]['responses'] as OpenAPI['paths'][U][M]['responses'][K]['content'] extends object ? K : never]: 
+                OpenAPI['paths'][U][M]['responses'][K]
+        }
+    > = Tmp[keyof Tmp];
+
+    type Requests<
+        U extends APIPath,
+        M extends APIMethod<U>
+    > = OpenAPI['paths'][U][M]['requestBody'];
+
+    type APIContentType<T> = keyof T['content'];
+
+    type APIHttpCode<U extends APIPath, M extends APIMethod<U>> = keyof OpenAPI['paths'][U][M]['responses'];
+
+    type APIServers<
+        Tmp = {
+            [K in Exclude<keyof OpenAPI['servers'], string | symbol>]: OpenAPI['servers'][K]['url'] extends `${infer URL}/` ? URL : OpenAPI['servers'][K]['url']
+        }
+    > = Tmp[keyof Tmp];
+
+    type StringToType<T extends StringToTypeT, D = T> 
+        = T extends string
+            ? T extends 'string' ? string 
+                : T extends 'boolean' ? boolean 
+                    : T extends 'number' ? number 
+                        : T extends 'integer' ? number
+                            : T extends 'double' ? number
+                                : D
+            : T['$ref'] extends `#/components/schemas/${infer S}` 
+                ? From$RefToType<T['$ref'], S>
+                : T['type'] extends 'string'
+                    ? T['format'] extends 'email' 
+                        ? `${string}@${string}.${string}`
+                        : T['enum'] extends string[]
+                            ? T['enum'][Extract<keyof T['enum'], number>]
+                            : StringToType<T['type'], D>
+                    : T['type'] extends  | 'boolean' | 'number' | 'integer' | 'double' 
+                        ? StringToType<T['type'], D>
+                        : T['type'] extends 'array'
+                            ? T['items']['type'] extends string 
+                                ? T['items']['type'] extends 'object'
+                                    ? FromSchemaToType<T['items']>[]
+                                    : StringToType<T['items']['type'], D>[] 
+                                : From$RefToType<T['items']['$ref'], D>[]
+                            : D[];
+
+    type UnionFromOneOf<
+        OneOf extends Schema[],
+        Tmp = { [K in keyof OneOf]: {type: FromSchemaToType<OneOf[K]>} }
+    > = Exclude<Tmp[keyof Tmp], Function | number>['type'];
+
+    type APIPath = keyof OpenAPI['paths'];
+
+    type APIMethod<P extends APIPath> = Exclude<keyof OpenAPI['paths'][P], 'parameters'>;
+
+    type IsAPIPathParameterRequired<
+        P extends APIPath, 
+        M extends APIMethod<P>,
+        KParameters extends Parameters[keyof Parameters]['name'],
+        Parameters extends OpenAPI['paths'][P][M]['parameters'] 
+            = OpenAPI['paths'][P][M]['parameters'],
+        Tmp = {
+            [K in keyof Parameters as Exclude<Parameters[K], Function> extends never ? never : Parameters[K]['name']]: 
+                Exclude<Parameters[K], Function>
+        }
+    > = {
+        [K in keyof Tmp]: Extract<Tmp[K], { name: K }>['required'] extends true ? true : false
+    }[KParameters];
+
+    type APIPathParametersTmp<
+        P extends APIPath, 
+        M extends APIMethod<P>,
+        Parameters = OpenAPI['paths'][P][M]['parameters'],
+        KParameters extends keyof Parameters = keyof Parameters,
+        Final = {
+            [K in keyof Parameters]: {
+                name: Parameters[K]['name'],
+                schema: Parameters[K]['schema'],
+                nullable: Parameters[K]['nullable'] extends boolean ? Parameters[K]['nullable'] : false,
+                required: Parameters[K]['required'] extends boolean ? Parameters[K]['required'] : false
             }
         },
-        required: string[]
-    };
-
-    type AllBasesUrl = Extract<OpenAPI['servers'][keyof OpenAPI['servers']], {
-        url: string,
-        description: string
-    }>['url'];
-
-    // génere le type associé à un schema de type objet
-    type FromObjectSchema<
-        S extends Schema['properties']
     > = {
-        [K in keyof S]: 
-            S[K]['type'] extends 'string' 
-                ? (S[K]['format'] extends 'email' 
-                    ? Email : string) : S[K]['type'] extends 'boolean' 
-                        ? boolean : S[K]['type'] extends 'number' 
-                            ? number : S[K]['type'] extends 'integer' 
-                                ? number  : undefined;
+        [K in Final[keyof Final] as K['schema'] extends object ? K['name'] : never]: FromSchemaToType<K['schema']>
     };
 
-    // génere le type assocé à m'importe quel schema
-    type FromSchema<S extends Schema> = 
-        S['type'] extends 'string' ? 
-            string : S['type'] extends 'boolean' 
-                ? boolean : S['type'] extends 'number' 
-                    ? number 
-                        : FromObjectSchema<S['properties']>;
+    type APIPathParameters<
+        P extends APIPath, 
+        M extends APIMethod<P>,
+        Parameters extends OpenAPI['paths'][P][M]['parameters'] = OpenAPI['paths'][P][M]['parameters'],
+        KParameters extends keyof Parameters = keyof Parameters,
+        Tmp = {
+            [K in keyof APIPathParametersTmp<P, M, Parameters, KParameters> as APIPathParametersTmp<P, M, Parameters, KParameters>[K] extends never ? never : K]: 
+                APIPathParametersTmp<P, M, Parameters, KParameters>[K]
+        },
+        OptionalParameters = {
+            [K in keyof Tmp as IsAPIPathParameterRequired<P, M, K, Parameters> extends false ? K : never]?: Tmp[K] 
+        },
+        NonOptionalParameters = {
+            [K in keyof Tmp as IsAPIPathParameterRequired<P, M, K, Parameters> extends true ? K : never]: Tmp[K]
+        },
+        Final = OptionalParameters & NonOptionalParameters
+    > = { [K in keyof Final]: Final[K] };
 
-    type GetSchema<
-        K extends keyof OpenAPI['components']['schemas']
-    > = OpenAPI['components']['schemas'][K];
+    type APIResponse<
+        P extends APIPath, 
+        M extends APIMethod<P>,
+        ContentType = APIContentType<Responses[HttpCode]>,
+        HttpCode extends keyof Responses = keyof Responses,
+        Responses = OpenAPI['paths'][P][M]['responses'],
+        Tmp = {
+            [K in HttpCode]: 
+                Responses[K]['content'] extends object 
+                    ? Responses[K]['content'] : never
+        }[HttpCode],
+        Tmp2 = {
+            [K in keyof Tmp as Tmp[K] extends never ? never : K]: Tmp[K]
+        },
+        Tmp3 = Tmp2[ContentType],
+        Response = Tmp3['schema']
+    > = Response extends object 
+        ? Response['$ref'] extends string 
+            ? From$RefToType<Response['$ref']> 
+            : FromSchemaToType<Response> 
+        : StringToType<Tmp[HttpCode][ContentType], undefined>
 
-    // génere le type assocé à un schema grace à son nom
-    type TypeFromSchema<
-        K extends keyof OpenAPI['components']['schemas']
-    > = TypeFromRef<`#/components/schema/${K}`>;
+    type APIRequest<
+        P extends APIPath, 
+        M extends APIMethod<P>,
+        ContentType extends APIContentType<Request>,
+        Request = OpenAPI['paths'][P][M]['requestBody']
+    > = Request extends object 
+        ? Request['content'][ContentType]['schema']['$ref'] extends string 
+            ? From$RefToType<Request['content'][ContentType]['schema']['$ref']> 
+            : FromSchemaToType<Request['content'][ContentType]> 
+        : StringToType<Request['content'][ContentType], undefined>;
 
-    // récupere le schema associé à une $ref
-    type SchemaFromRef<
-        S extends `#/components/schema/${keyof OpenAPI['components']['schemas']}` & string
-    > = 
-        S extends `#/components/schema/${infer R}` 
-            ? OpenAPI['components']['schemas'][R]
-                : string;
+    type FromSchemaToType<
+        T extends Schema,
+        RequiredKeys = Extract<T['required'][keyof T['required']], string>,
+        OptionalKeys = Exclude<Extract<keyof T['properties'], string>, RequiredKeys>,
+        Tmp = T['type'] extends 'object' 
+            ? T['properties'] extends object
+                ? ({
+                    [K in RequiredKeys]: 
+                        T['properties'][K]['nullable'] extends true 
+                            ? T['properties'][K]['type'] extends string 
+                                ? T['properties'][K]['type'] extends 'object'
+                                    ? (FromSchemaToType<T['properties'][K]> | null)
+                                    : (StringToType<T['properties'][K], never> | null)
+                                : K extends `is${Uppercase<string>}` 
+                                    ? (boolean | null) 
+                                    : (undefined | null)
+                            : T['properties'][K]['type'] extends string 
+                                ? T['properties'][K]['type'] extends 'object'
+                                    ? FromSchemaToType<T['properties'][K]>
+                                    : StringToType<T['properties'][K], never>
+                                : K extends `is${Uppercase<string>}` 
+                                    ? boolean 
+                                    : StringToType<T['properties'][K], undefined>
+                } & {
+                    [K in OptionalKeys]?:
+                        T['properties'][K]['nullable'] extends true 
+                            ? T['properties'][K]['type'] extends string 
+                                ? T['properties'][K]['type'] extends 'object'
+                                    ? (FromSchemaToType<T['properties'][K]> | null)
+                                    : (StringToType<T['properties'][K], never> | null)
+                                : K extends `is${Uppercase<string>}` 
+                                    ? (boolean | null) 
+                                    : (undefined | null)
+                            : T['properties'][K]['type'] extends string 
+                                ? T['properties'][K]['type'] extends 'object'
+                                    ? FromSchemaToType<T['properties'][K]>
+                                    : StringToType<T['properties'][K], never>
+                                : K extends `is${string}` 
+                                    ? boolean 
+                                    : StringToType<T['properties'][K], undefined>
+                })
+                : {}
+            : T['oneOf'] extends Schema[] 
+                ? UnionFromOneOf<T['oneOf']> 
+                : StringToType<T, undefined>
+    > = Tmp extends object ? { [K in keyof Tmp]: Tmp[K] } : Tmp;
     
-    // génere le type assocé à un schema sans prendre en comte les 
-    // propriétés optionelles grace à au lien d'une $ref
-    type TypeFromRefWithAllRequired<
-        S extends `#/components/schema/${keyof OpenAPI['components']['schemas']}` & string
-    > = 
-        S extends `#/components/schema/${infer R}` 
-            ? FromSchema<OpenAPI['components']['schemas'][R]>
-                : string;
-    
-    // récupere les clé requises d'un schema
-    type RequiredKeys<
-        S extends Schema,
-        P extends S['properties'] = S['properties'],
-        KP extends keyof P = keyof P,
-        R extends KP[] = S['required'],
-        KR extends keyof R = keyof R
-    > = Extract<R[KR], string> extends never ? undefined : Extract<R[KR], string>;
+    type From$RefToType<
+        T extends `#/components/schemas/${keyof OpenAPI['components']['schemas']}`,
+        S = T extends `#/components/schemas/${infer _S}` ? _S : never,
+        RequiredKeys = Extract<Schemas[S]['required'][keyof OpenAPI['components']['schemas'][S]['required']], string>,
+        OptionalKeys = Exclude<Extract<keyof OpenAPI['components']['schemas'][S]['properties'], string>, RequiredKeys>,
+        Schemas = OpenAPI['components']['schemas'],
+        Tmp = T extends `#/components/schemas/${infer _S}` 
+            ? Schemas[_S]['type'] extends 'object' 
+                ? FromSchemaToType<Schemas[_S]>
+                : StringToType<Schemas[_S], never>
+            : never
+    > = { [K in keyof Tmp]: Tmp[K] };
 
-    // génere le type assocé à un schema en prenant en comte les 
-    // propriétés optionelles grace à au lien d'une $ref
-    type TypeFromRef<
-        R extends `#/components/schema/${SchemaName}` & string = `#/components/schema/User`, 
-        SchemaName extends keyof OpenAPI['components']['schemas'] 
-            = keyof OpenAPI['components']['schemas'],
-        Properties extends OpenAPI['components']['schemas'][SchemaName]['properties']
-            = OpenAPI['components']['schemas'][SchemaName]['properties'],
-        S extends SchemaFromRef<R> = SchemaFromRef<R>,
-        T extends TypeFromRefWithAllRequired<R> = TypeFromRefWithAllRequired<R>,
-        OptionalsKeys extends Exclude<
-            keyof Properties, 
-            RequiredKeys<OpenAPI['components']['schemas'][SchemaName]>
-        > = Exclude<
-            keyof Properties, 
-            RequiredKeys<OpenAPI['components']['schemas'][SchemaName]>
-        >
-    > = Combine<
-        {
-            [K in Exclude<keyof Properties, OptionalsKeys>]: T[K]
-        } & {
-            [K in Exclude<keyof Properties, RequiredKeys<S>>]?: T[K]
+    type APIHeaders<
+        U extends APIPath,
+        M extends APIMethod<U>,
+        Accept extends APIContentType<Responses<U, M>> 
+            = APIContentType<Responses<U, M>>,
+        Tmp = {
+            'Content-Type': APIContentType<Requests<U, M>>,
+            Accept: Accept
         }
-    >;
-
-    type AvailableUris = keyof OpenAPI['paths'];
-
-    type AvailableHttpMethods<URI extends AvailableUris> = 
-        | keyof OpenAPI['paths'][URI]
-        | Capitalize<keyof OpenAPI['paths'][URI]>
-        | Uppercase<keyof OpenAPI['paths'][URI]>;
-
-    type ResponseType<
-        URI extends AvailableUris,
-        HttpMethod extends AvailableHttpMethods<URI>,
-        ResponseCode extends keyof Responses,
-        ContentType extends keyof Path[ResponseCode]['content'],
-        Responses extends OpenAPI['paths'][URI][HttpMethod]['responses'] 
-            = OpenAPI['paths'][URI][HttpMethod]['responses'],
-        Path extends { [K in keyof Responses]: Responses[K] } 
-            = { [K in keyof Responses]: Responses[K] }
-    > = Path[ResponseCode]['content'][ContentType];
-
-    type InterpretedArrayResponseType<
-        URI extends AvailableUris,
-        HttpMethod extends AvailableHttpMethods<URI>,
-        ResponseCode extends keyof Responses,
-        ContentType extends keyof Path[ResponseCode]['content'],
-        Responses extends OpenAPI['paths'][URI][HttpMethod]['responses'] 
-            = OpenAPI['paths'][URI][HttpMethod]['responses'],
-        Path extends { [K in keyof Responses]: Responses[K] } 
-            = { [K in keyof Responses]: Responses[K] },
-        Response extends ResponseType<URI, HttpMethod, ResponseCode, ContentType, Responses, Path> 
-            = ResponseType<URI, HttpMethod, ResponseCode, ContentType, Responses, Path>
-    > = 
-        Response['schema']['items']['$ref'] extends `#/components/schemas/${infer T}` ?
-            TypeFromSchema<T>[] : void;
-
-    type InterpretedSimpleResponseType<
-        URI extends AvailableUris,
-        HttpMethod extends AvailableHttpMethods<URI>,
-        ResponseCode extends keyof Responses,
-        ContentType extends keyof Path[ResponseCode]['content'],
-        Responses extends OpenAPI['paths'][URI][HttpMethod]['responses'] 
-            = OpenAPI['paths'][URI][HttpMethod]['responses'],
-        Path extends { [K in keyof Responses]: Responses[K] } 
-            = { [K in keyof Responses]: Responses[K] },
-        Response extends ResponseType<URI, HttpMethod, ResponseCode, ContentType, Responses, Path> 
-            = ResponseType<URI, HttpMethod, ResponseCode, ContentType, Responses, Path>
-    > = 
-        Response['schema']['$ref'] extends `#/components/schemas/${infer T}` ?
-            TypeFromSchema<T> : void;
-
-    type ContentTypeFromUri<
-        URI extends AvailableUris,
-        HttpMethod extends keyof OpenAPI['paths'][URI]
-    > = keyof OpenAPI['paths'][URI][HttpMethod]['requestBody']['content'] extends never ?
-        undefined : keyof OpenAPI['paths'][URI][HttpMethod]['requestBody']['content'];
-
-    type InterpretedRequestType<
-        URI extends AvailableUris,
-        HttpMethod extends AvailableHttpMethods<URI>,
-        ContentType extends ContentTypeFromUri<URI, HttpMethod>,
-        Request extends OpenAPI['paths'][URI][HttpMethod]['requestBody']['content']
-            = OpenAPI['paths'][URI][HttpMethod]['requestBody']['content'],
-        Schema extends Request[ContentType]['schema'] = Request[ContentType]['schema']
-    > = Schema['type'] extends unknown 
-        ? Schema['$ref'] extends `#/components/schemas/${infer T}` 
-            ? TypeFromSchema<T> : undefined : undefined;
-
-    type FetchInitObject<
-        URI extends AvailableUris,
-        HttpMethod extends keyof OpenAPI['paths'][URI],
-        ContentType extends ContentTypeFromUri<URI, HttpMethod>,
     > = {
-        method: HttpMethod,
-        headers: {
-            'Content-Type': ContentType
-        }
-    } & (InterpretedRequestType<
-        URI, HttpMethod,
-        ContentType
-    > extends never ? {} : {
-        body?: InterpretedRequestType<
-            URI, HttpMethod,
-            ContentType
-        >
-    });
-
-    type InterpretedResponseType<
-        URI extends AvailableUris,
-        HttpMethod extends AvailableHttpMethods<URI>,
-        ResponseCode extends keyof Responses,
-        ContentType extends keyof Path[ResponseCode]['content'],
-        Responses extends OpenAPI['paths'][URI][HttpMethod]['responses'] 
-            = OpenAPI['paths'][URI][HttpMethod]['responses'],
-        Path extends { [K in keyof Responses]: Responses[K] } 
-            = { [K in keyof Responses]: Responses[K] },
-        Response extends ResponseType<URI, HttpMethod, ResponseCode, ContentType, Responses, Path> 
-            = ResponseType<URI, HttpMethod, ResponseCode, ContentType, Responses, Path>,
-        _ResponseType extends Response['schema']['type'] = Response['schema']['type']
-    > = 
-        _ResponseType extends 'array' ?
-            InterpretedArrayResponseType<
-                URI, HttpMethod, ResponseCode, 
-                ContentType, Responses, Path, 
-                Response
-            > : 
-                (_ResponseType extends 'object' ?
-                    InterpretedSimpleResponseType<
-                        URI, HttpMethod, ResponseCode, 
-                        ContentType, Responses, Path, 
-                        Response
-                    > : (_ResponseType extends unknown ?
-                        (Response['schema']['$ref'] extends `#/components/schemas/${infer T}` ?
-                            TypeFromSchema<T> : undefined) : undefined));
-
-    type InitMethodObject<URI extends AvailableUris> = {
-        method: keyof AvailableHttpMethods<URI>
+        [K in keyof Tmp as Tmp[K] extends never ? never : K]: Tmp[K]
     };
 
-    type InitBodyObject<
-        URI extends AvailableUris,
-        HttpMethod extends AvailableHttpMethods<URI>,
-        ResponseCode extends keyof Responses,
-        ContentType extends keyof Path[ResponseCode]['content'],
-        Responses extends OpenAPI['paths'][URI][HttpMethod]['responses'] 
-            = OpenAPI['paths'][URI][HttpMethod]['responses'],
-        Path extends { [K in keyof Responses]: Responses[K] } 
-            = { [K in keyof Responses]: Responses[K] },
-        Response extends ResponseType<URI, HttpMethod, ResponseCode, ContentType, Responses, Path> 
-            = ResponseType<URI, HttpMethod, ResponseCode, ContentType, Responses, Path>,
-        _ResponseType extends Response['schema']['type'] = Response['schema']['type']
-    > = HttpMethod extends 'get' 
-        ? never : InterpretedResponseType<
-            URI, HttpMethod, ResponseCode, 
-            ContentType, Responses, Path, 
-            Response, _ResponseType
-        >;
-
-    type FetchReturnType<
-        URI extends AvailableUris,
-        HttpMethod extends keyof OpenAPI['paths'][URI],
-        ContentType extends ContentTypeFromUri<URI, HttpMethod>,
-        HttpReturnCode extends AvailableHttpCodes
-            = AvailableHttpCodes,
-        Body extends InterpretedRequestType<URI, HttpMethod, ContentType>
-            = InterpretedRequestType<URI, HttpMethod, ContentType>,
-        Path extends OpenAPI['paths'][URI][HttpMethod] 
-            = OpenAPI['paths'][URI][HttpMethod],
-    > = InterpretedResponseType<
-        URI, 
-        HttpMethod,
-        HttpReturnCode,
-        'application/json'
-    >;
-
-    type FetchReturnTypes<
-        URI extends AvailableUris,
-        HttpMethod extends keyof OpenAPI['paths'][URI],
-        Responses extends OpenAPI['paths'][URI][HttpMethod]['responses']
-            = OpenAPI['paths'][URI][HttpMethod]['responses']
+    type APIOptions<
+        U extends APIPath,
+        M extends APIMethod<U>,
+        Tmp = {
+            body: APIPathParameters<U, M>
+        }
     > = {
-        [K in keyof Responses]: InterpretedResponseType<URI, HttpMethod, K, 'application/json'>// TypeFromSchema<Responses[K]['content']['application/json']['schema']>;
-    }[keyof {
-        [K in keyof Responses]: InterpretedResponseType<URI, HttpMethod, K, 'application/json'>// TypeFromSchema<Responses[K]['content']['application/json']['schema']>;
-    }];
-
-    type AvailableHttpCodes<
-        URI extends AvailableUris = keyof OpenAPI['paths'],
-        HttpMethod extends keyof OpenAPI['paths'][URI] 
-            = keyof OpenAPI['paths'][URI]
-    > = keyof OpenAPI['paths'][URI][HttpMethod]['responses'];
-
-    type FetchReturnHook<
-        URI extends AvailableUris,
-        HttpMethod extends keyof OpenAPI['paths'][URI],
-        ContentType extends ContentTypeFromUri<URI, HttpMethod>,
-        Return extends FetchReturnTypes<
-            URI, HttpMethod
-        > = FetchReturnTypes<
-            URI, HttpMethod
-        >,
-        Body extends InterpretedRequestType<URI, HttpMethod, ContentType>
-            = InterpretedRequestType<URI, HttpMethod, ContentType>
-    > = Body extends undefined ? {
-        //fetch(options: {} = {}): Promise<Exclude<Return, undefined>>;
-        fetch(): Promise<Exclude<Return, undefined>>;
-        abort(): void;
-    } : {
-        // fetch(options: { body: Body }): Promise<Exclude<Return, undefined>>;
-        fetch(body: Body): Promise<Exclude<Return, undefined>>;
-        abort(): void;
-    }
-
-    type T = FetchReturnHook<'/users', 'get', 'application/json'>
+        [K in keyof Tmp as Tmp[K] extends never ? never : K]: Tmp[K]
+    };
 }
