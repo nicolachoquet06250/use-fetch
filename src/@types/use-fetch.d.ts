@@ -140,7 +140,14 @@ declare module 'use-fetch' {
         Request = APIRequest<U, M, ContentType>,
         Body = PathParams & Request
     > = {
-        [K in keyof Body]: Body[K]
+        [K in keyof Body as K extends string 
+            ? K extends keyof string[] 
+                ? never
+                : Body[K] extends object 
+                    ? never 
+                    : K 
+            : never
+        ]: Body[K]
     }
 
     type APIResponse<

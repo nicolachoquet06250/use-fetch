@@ -92,5 +92,5 @@ declare module 'tests/use-fetch' {
     type TestAPIRequest = APIRequest<'/api/authentication-token', 'post', 'application/json'>;
 
     type TestAPIBody = APIBody<'/api/authentication-token', 'post', 'application/json'>;
-    type TestBody = TestAPIPathParameters & TestAPIRequest
+    type TestBody = TestAPIPathParameters & TestAPIRequest;
 }
