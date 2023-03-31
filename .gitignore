@@ -24,4 +24,4 @@ dist-ssr
 *.sln
 *.sw?
 
-src/@types/openapi.d.ts
+./src/@types/openapi.d.ts
