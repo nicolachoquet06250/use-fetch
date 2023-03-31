@@ -3,7 +3,7 @@ Test de création d'un hook useFetch avec un systeme de types qui adapte la sort
 
 # Get Started
 - Clone the repo
-- run the command :
+- Run the command :
 ```sh
 yarn
 ```
@@ -13,4 +13,9 @@ declare type OpenAPI = {
     // ... open api exported doc
 }
 ```
-- To test, update or create a component in the `vue 3` project and enjoy yourself !
+- To test, update or create a component in the `vue 3` project
+- Run the command :
+```sh
+yarn dev
+```
+- Enjoy yourself !

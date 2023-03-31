@@ -1,5 +1,3 @@
-/// <reference path="./use-fetch.d.ts" />
-
 declare module 'useFetch' {
     import type {
         APIContentType,
